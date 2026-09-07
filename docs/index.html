@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AI, DNN, 얼굴 식별과 화자 식별을 다루는 모바일 기술 노트 모음">
+  <meta name="color-scheme" content="light dark">
+  <title>Technical Notes</title>
+  <style>
+    :root{--bg:#f4f6f8;--surface:#fff;--ink:#16191d;--muted:#687078;--line:#dce1e5;--blue:#3858d6;--violet:#6852c9;--green:#15825e;--shadow:0 16px 44px rgba(31,42,55,.08)}
+    @media(prefers-color-scheme:dark){:root{--bg:#101315;--surface:#181c1f;--ink:#edf0f2;--muted:#a0a8ae;--line:#30373c;--blue:#8ea4ff;--violet:#ad9cff;--green:#62d2a9;--shadow:none}}
+    *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Pretendard,"Noto Sans KR",system-ui,sans-serif;line-height:1.65}.shell{width:min(1080px,100%);margin:auto;padding:clamp(24px,5vw,64px) clamp(18px,4vw,36px) 72px}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:22px;border-bottom:1px solid var(--line)}.brand{font-size:.78rem;font-weight:800;letter-spacing:.14em}.count{color:var(--muted);font-size:.82rem}.intro{padding:clamp(42px,8vw,90px) 0 clamp(32px,6vw,58px)}.eyebrow{margin:0 0 14px;color:var(--blue);font-size:.75rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase}.intro h1{max-width:760px;margin:0;font-size:clamp(2.25rem,7vw,5rem);line-height:1.04;letter-spacing:-.055em}.intro p{max-width:620px;margin:22px 0 0;color:var(--muted);font-size:clamp(1rem,2vw,1.15rem)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.card{--accent:var(--blue);position:relative;min-height:310px;display:flex;flex-direction:column;padding:25px;color:inherit;text-decoration:none;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;transition:transform .2s ease,border-color .2s ease}.card:nth-child(2){--accent:var(--violet)}.card:nth-child(3){--accent:var(--green)}.card:before{content:"";position:absolute;inset:0 0 auto;height:4px;background:var(--accent)}.card:hover{transform:translateY(-4px);border-color:var(--accent)}.card:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.number{color:var(--accent);font-size:.75rem;font-weight:800;letter-spacing:.12em}.card h2{margin:38px 0 12px;font-size:clamp(1.35rem,3vw,1.7rem);line-height:1.2;letter-spacing:-.025em}.card p{margin:0;color:var(--muted);font-size:.95rem}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}.tags span{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:.7rem}.open{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:30px;color:var(--accent);font-weight:750;font-size:.88rem}.open i{font-style:normal;font-size:1.25rem}.foot{margin-top:42px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem}@media(max-width:780px){.grid{grid-template-columns:1fr}.card{min-height:250px}.intro{padding-top:48px}}@media(prefers-reduced-motion:reduce){.card{transition:none}.card:hover{transform:none}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top"><span class="brand">TECHNICAL NOTES</span><span class="count">3 notes</span></header>
+    <section class="intro"><p class="eyebrow">Personal knowledge library</p><h1>복잡한 기술을<br>그림과 흐름으로 이해합니다.</h1><p>AI 모델과 임베디드 시스템을 단계별 설명, 수식, 인터랙티브 시각화로 정리한 기술 노트입니다.</p></section>
+    <section class="grid" aria-label="기술 노트 목록">
+      <a class="card" href="dnn/"><span class="number">NOTE 01</span><h2>Deep Neural Network</h2><p>MLP에서 CNN, RNN/LSTM, Transformer까지 핵심 구조와 차이를 시각적으로 살펴봅니다.</p><div class="tags"><span>MLP</span><span>CNN</span><span>RNN</span><span>Transformer</span></div><span class="open">노트 열기 <i>→</i></span></a>
+      <a class="card" href="speaker-identification/"><span class="number">NOTE 02</span><h2>Speaker Identification</h2><p>마이크 입력이 스펙트로그램과 임베딩을 거쳐 화자 이름으로 판정되는 과정을 설명합니다.</p><div class="tags"><span>Audio</span><span>FFT</span><span>log-Mel</span><span>Embedding</span></div><span class="open">노트 열기 <i>→</i></span></a>
+      <a class="card" href="id6-face-identification/"><span class="number">NOTE 03</span><h2>Face Identification</h2><p>STM32N6에서 얼굴 검출, 생체성 확인, 특징 추출과 1:N 매칭이 연결되는 흐름을 정리합니다.</p><div class="tags"><span>STM32N6</span><span>ToF</span><span>CNN</span><span>1:N Matching</span></div><span class="open">노트 열기 <i>→</i></span></a>
+    </section>
+    <footer class="foot">새로운 HTML 노트는 이 목차에 계속 추가됩니다.</footer>
+  </main>
+</body>
+</html>
+
