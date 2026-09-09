@@ -1,0 +1,78 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>시스템과 카메라 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html" class="active" aria-current="page"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">01 / Deep dive · 1–5</p><h1>시스템과 카메라</h1><p class="lead">카메라 입력과 보드의 하드웨어 경로</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-1">1. 목표</a><a href="#section-2">2. 전체 Edge AI 시스템 구조</a><a href="#section-3">3. STM32N6570-DK의 Hardware Pipeline</a><a href="#section-4">4. External Component Driver와 Peripheral 설정</a><a href="#section-5">5. DCMIPP의 역할</a></nav><section class="lesson" id="section-1"><h2><span class="secnum">01</span>목표</h2><p>STM32N6570-DK의 카메라로 입력되는 영상을 분석하여 다음과 같은 동물을 실시간으로 분류하는 Edge AI 애플리케이션을 구현한다고 가정한다.</p><pre tabindex="0"><code>Dog
+Cat
+Lion
+Tiger
+Elephant
+Other</code></pre><p>이 애플리케이션은 <strong>Image Classification</strong> 문제이다.</p><p>즉,</p><div class="flow" aria-label="단계별 흐름"><div class="node">Camera Image</div><span class="arrow" aria-hidden="true">→</span><div class="node">&quot;What animal is this?&quot;</div><span class="arrow" aria-hidden="true">→</span><div class="node">Lion : 93.2 %</div></div><p>처럼 한 영상 또는 한 ROI에서 가장 가능성이 높은 하나의 클래스를 선택한다.</p><p>사자와 개의 위치까지 각각 찾아 Bounding Box를 그리는 것이 목적이라면 Image Classification이 아니라 <strong>Object Detection</strong>을 사용해야 한다.</p></section><section class="lesson" id="section-2"><h2><span class="secnum">02</span>전체 Edge AI 시스템 구조</h2><p>전체 시스템은 크게 두 부분으로 나뉜다.</p><figure class="visual-flow"><figcaption>전체 Edge AI 시스템 구조</figcaption><div class="lanes"><div><figure class="visual-flow"><figcaption>PC / Training Side</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Dataset</b></li><li style="--i:1"><span class="step-dot">02</span><b>Preprocessing / Augmentation</b></li><li style="--i:2"><span class="step-dot">03</span><b>DNN Training / Fine-tuning</b></li><li style="--i:3"><span class="step-dot">04</span><b>Quantization</b></li><li style="--i:4"><span class="step-dot">05</span><b>INT8 Model</b></li></ol></figure></div><div><figure class="visual-flow"><figcaption>STM32N6570-DK / Edge Side</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Camera</b></li><li style="--i:1"><span class="step-dot">02</span><b>Preprocessing</b></li><li style="--i:2"><span class="step-dot">03</span><b>DNN Inference</b></li><li style="--i:3"><span class="step-dot">04</span><b>Postprocessing</b></li><li style="--i:4"><span class="step-dot">05</span><b>Application / LCD</b></li></ol></figure></div></div><p class="bridge">학습된 INT8 모델 ── Model deployment ──→ STM32 추론</p></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>┌──────────────────────────────────────┐
+│           PC / Training Side         │
+│                                      │
+│ Dataset                              │
+│   ↓                                  │
+│ Preprocessing / Augmentation         │
+│   ↓                                  │
+│ DNN Training / Fine-tuning           │
+│   ↓                                  │
+│ Quantization                         │
+│   ↓                                  │
+│ INT8 Model                           │
+└──────────────────┬───────────────────┘
+                   │
+                   │ Model deployment
+                   ↓
+┌──────────────────────────────────────┐
+│        STM32N6570-DK / Edge Side     │
+│                                      │
+│ Camera                               │
+│   ↓                                  │
+│ Preprocessing                        │
+│   ↓                                  │
+│ DNN Inference                        │
+│   ↓                                  │
+│ Postprocessing                       │
+│   ↓                                  │
+│ Application / LCD                    │
+└──────────────────────────────────────┘</code></pre></details><p>가장 중요한 차이는 다음과 같다.</p><pre tabindex="0"><code>PC
+→ Training
+
+STM32
+→ Inference</code></pre><p>STM32에서 일반적으로 모델을 학습시키는 것이 아니라, PC에서 이미 학습된 모델을 STM32에서 실행한다.</p></section><section class="lesson" id="section-3"><h2><span class="secnum">03</span>STM32N6570-DK의 Hardware Pipeline</h2><p>이 프로젝트에서 영상은 대략 다음 경로를 통과한다.</p><figure class="visual-flow"><figcaption>영상 데이터 경로</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>IMX335 Camera</b></li><li style="--i:1"><span class="step-dot">02</span><b>MIPI CSI-2 · Pixel Stream</b></li><li style="--i:2"><span class="step-dot">03</span><b>DCMIPP</b></li><li style="--i:3"><span class="step-dot">04</span><b>Frame Buffer</b></li><li style="--i:4"><span class="step-dot">05</span><b>AI Input Buffer</b></li><li style="--i:5"><span class="step-dot">06</span><b>Neural-ART NPU</b></li></ol></figure><div class="branch-note">Frame Buffer ↗ LCD Preview · 미리보기 분기</div><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>IMX335 Camera
+     │
+     │ Pixel Stream
+     ↓
+MIPI CSI-2
+     ↓
+DCMIPP
+     ↓
+Frame Buffer
+     ├──────────────→ LCD Preview
+     │
+     ↓
+AI Input Buffer
+     ↓
+Neural-ART NPU</code></pre></details><p>각 블록의 역할을 구분하는 것이 중요하다.</p><h3>3.1 Camera Sensor</h3><p>STM32N6570-DK에서 사용하는 카메라 모듈의 sensor는 IMX335 계열이다.</p><p>Camera sensor 내부에서는 다음과 같은 작업이 이루어진다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">빛</div><span class="arrow" aria-hidden="true">→</span><div class="node">Pixel sensor</div><span class="arrow" aria-hidden="true">→</span><div class="node">Analog signal</div><span class="arrow" aria-hidden="true">→</span><div class="node">ADC</div><span class="arrow" aria-hidden="true">→</span><div class="node">Digital pixel data</div></div><p>MCU가 카메라를 제어하기 위해서는 두 가지 경로가 필요하다.</p><figure class="visual-flow"><figcaption>제어와 영상 전송의 두 경로</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>I2C → Register configuration</b></li><li style="--i:1"><span class="step-dot">02</span><b>MIPI CSI-2 → Image pixel transfer</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>I2C
+ └─ Register configuration
+
+MIPI CSI-2
+ └─ Image pixel transfer</code></pre></details><p>I2C를 통해서는 다음과 같은 값을 설정한다.</p><pre tabindex="0"><code>Resolution
+Frame rate
+Exposure
+Gain
+Pixel format
+Streaming start / stop</code></pre><p>실제 영상 데이터는 I2C가 아니라 MIPI CSI-2를 통해 전달된다.</p></section><section class="lesson" id="section-4"><h2><span class="secnum">04</span>External Component Driver와 Peripheral 설정</h2><p>가장 먼저 AI가 아닌 Camera Bring-up을 완료하는 것이 좋다.</p><p>목표는 다음과 같다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Camera</div><span class="arrow" aria-hidden="true">→</span><div class="node">MIPI CSI-2</div><span class="arrow" aria-hidden="true">→</span><div class="node">DCMIPP</div><span class="arrow" aria-hidden="true">→</span><div class="node">Frame Buffer</div><span class="arrow" aria-hidden="true">→</span><div class="node">LCD</div></div><p>여기까지 정상적으로 동작한 다음 AI를 연결한다.</p><h3>4.1 Software Layer</h3><p>일반적인 구조는 다음과 같다.</p><figure class="visual-flow"><figcaption>소프트웨어 계층</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Application</b></li><li style="--i:1"><span class="step-dot">02</span><b>Board Support Package</b></li><li style="--i:2"><span class="step-dot">03</span><b>Camera BSP</b></li><li style="--i:3"><span class="step-dot">04</span><b>IMX335 Component Driver</b></li><li style="--i:4"><span class="step-dot">05</span><b>I2C Driver</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Application
+     │
+     ↓
+Board Support Package
+     │
+     ↓
+Camera BSP
+     │
+     ↓
+IMX335 Component Driver
+     │
+     ↓
+I2C Driver</code></pre></details><p>예를 들어 Application에서는 다음과 같은 수준의 API를 사용한다.</p><pre tabindex="0"><code>Camera_Init()
+Camera_Start()
+Camera_Stop()</code></pre><p>그 아래 Camera driver에서는 실제 sensor register를 설정한다.</p><pre tabindex="0"><code>IMX335_ReadID()
+IMX335_SetResolution()
+IMX335_SetExposure()
+IMX335_SetGain()</code></pre></section><section class="lesson" id="section-5"><h2><span class="secnum">05</span>DCMIPP의 역할</h2><p>DCMIPP는 단순히 Camera data를 memory로 옮기는 peripheral이라고만 보면 부족하다.</p><p>Vision application에서는 <strong>Image preprocessing hardware</strong> 역할까지 수행할 수 있다.</p><p>예를 들어 카메라 영상이</p><pre tabindex="0"><code>1920 × 1080</code></pre><p>이고 DNN의 입력이</p><pre tabindex="0"><code>224 × 224</code></pre><p>라면 전체 영상을 그대로 DNN에 넣을 수 없다.</p><p>따라서</p><div class="flow" aria-label="단계별 흐름"><div class="node">1920×1080</div><span class="arrow" aria-hidden="true">→</span><div class="node">Crop</div><span class="arrow" aria-hidden="true">→</span><div class="node">Resize</div><span class="arrow" aria-hidden="true">→</span><div class="node">Color conversion</div><span class="arrow" aria-hidden="true">→</span><div class="node">224×224 RGB</div></div><p>과 같은 처리가 필요하다.</p><p>가능하다면 CPU에서 pixel을 하나씩 계산하기보다 DCMIPP와 같은 hardware block을 활용하는 것이 좋다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="index.html">← 전체 흐름</a><a href="training.html">데이터와 학습 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

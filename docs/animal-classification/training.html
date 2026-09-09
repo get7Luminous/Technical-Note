@@ -1,0 +1,100 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>데이터와 학습 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html" class="active" aria-current="page"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">02 / Deep dive · 6–13</p><h1>데이터와 학습</h1><p class="lead">데이터셋 설계부터 전이 학습과 미세 조정</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-6">6. Dataset 설계</a><a href="#section-7">7. 왜 Other Class가 필요한가?</a><a href="#section-8">8. Dataset에서 중요한 것은 양보다 다양성</a><a href="#section-9">9. Model 선택</a><a href="#section-10">10. Pretrained Model은 무엇인가?</a><a href="#section-11">11. ImageNet Pretraining</a><a href="#section-12">12. Transfer Learning</a><a href="#section-13">13. Fine-tuning</a></nav><section class="lesson" id="section-6"><h2><span class="secnum">06</span>Dataset 설계</h2><p>이 AI의 성능을 결정하는 가장 중요한 요소 중 하나가 Dataset이다.</p><p>예를 들어 다음과 같이 클래스를 정의한다.</p><pre tabindex="0"><code>Class 0 : Dog
+Class 1 : Cat
+Class 2 : Lion
+Class 3 : Tiger
+Class 4 : Elephant
+Class 5 : Other</code></pre><p>Dataset은 다음처럼 구성할 수 있다.</p><div class="directory"><pre tabindex="0"><code>dataset/
+│
+├── train/
+│   ├── dog/
+│   ├── cat/
+│   ├── lion/
+│   ├── tiger/
+│   ├── elephant/
+│   └── other/
+│
+├── validation/
+│   └── ...
+│
+└── test/
+    └── ...</code></pre></div></section><section class="lesson" id="section-7"><h2><span class="secnum">07</span>왜 Other Class가 필요한가?</h2><p>Softmax 기반 classifier는 기본적으로 다음 질문에 답한다.</p><blockquote>&quot;이 이미지가 현재 등록된 클래스 중 무엇과 가장 가까운가?&quot;</blockquote><p>따라서 화면에 책상만 있어도 출력은 나올 수 있다.</p><p>예를 들어</p><pre tabindex="0"><code>Dog       28 %
+Cat       19 %
+Lion      24 %
+Tiger     11 %
+Elephant   8 %</code></pre><p>처럼 의미 없는 결과가 나올 수 있다.</p><p>따라서 다음과 같은 데이터를 <code>Other</code>에 포함시키는 것이 좋다.</p><pre tabindex="0"><code>사람
+자동차
+책상
+나무
+빈 화면
+실내
+건물
+등록되지 않은 동물</code></pre><p>그러면 DNN이</p><pre tabindex="0"><code>Known animal
+vs
+Other</code></pre><p>도 함께 학습할 수 있다.</p></section><section class="lesson" id="section-8"><h2><span class="secnum">08</span>Dataset에서 중요한 것은 양보다 다양성</h2><p>예를 들어 Lion dataset에 정면 사자 사진만 많다면 실제 환경에서는 성능이 낮아질 수 있다.</p><p>따라서 다음 조건들이 포함되어야 한다.</p><pre tabindex="0"><code>Front / Side view
+
+Near / Far
+
+Bright / Dark
+
+Different backgrounds
+
+Partial occlusion
+
+Different sizes
+
+Motion blur
+
+Different camera angles</code></pre><p>특히 최종 제품에서는 실제 STM32N6570-DK Camera로 촬영한 이미지도 dataset에 포함시키는 것이 좋다.</p><p>이것을 <strong>Domain Gap을 줄인다</strong>고 볼 수 있다.</p></section><section class="lesson" id="section-9"><h2><span class="secnum">09</span>Model 선택</h2><p>이 프로젝트에서는 MobileNetV2를 좋은 시작점으로 볼 수 있다.</p><p>이유는 다음과 같다.</p><pre tabindex="0"><code>상대적으로 작은 모델
+
+연산량이 적음
+
+Embedded AI에 적합
+
+Quantization이 용이함
+
+CNN의 핵심 구조를 공부하기 좋음</code></pre><p>구성은 다음처럼 시작할 수 있다.</p><pre tabindex="0"><code>Model     : MobileNetV2
+
+Input     : 224 × 224 × 3
+
+Dataset   : Custom animal dataset
+
+Pretrain  : ImageNet
+
+Output    : 6 classes
+
+Precision : INT8</code></pre></section><section class="lesson" id="section-10"><h2><span class="secnum">10</span>Pretrained Model은 무엇인가?</h2><p>MobileNetV2 구조 자체와 학습된 weight는 구분해야 한다.</p><figure class="visual-flow"><figcaption>모델의 두 구성 요소</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>MobileNetV2</b></li><li style="--i:1"><span class="step-dot">02</span><b>Network Architecture + Weights</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>MobileNetV2
+     │
+     ├─ Network Architecture
+     │
+     └─ Weights</code></pre></details><p>Architecture는</p><pre tabindex="0"><code>Conv
+Depthwise Conv
+BatchNorm
+Activation
+Residual block
+...</code></pre><p>같은 연결 구조를 의미한다.</p><p>Weight는 실제 학습을 통해 얻어진 숫자들이다.</p><p>예를 들어</p><pre tabindex="0"><code>w1 = 0.214
+w2 = -0.532
+w3 = 1.083
+...</code></pre><p>와 같은 값이 수백만 개 존재한다.</p></section><section class="lesson" id="section-11"><h2><span class="secnum">11</span>ImageNet Pretraining</h2><p>MobileNetV2를 처음부터 학습할 수도 있지만 일반적으로 ImageNet으로 이미 학습된 weight를 사용한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">ImageNet Dataset</div><span class="arrow" aria-hidden="true">→</span><div class="node">MobileNetV2 Training</div><span class="arrow" aria-hidden="true">→</span><div class="node">Pretrained MobileNetV2</div></div><p>이미 학습된 network는 초반 layer에서 다음과 같은 feature를 검출하는 능력을 갖고 있다.</p><pre tabindex="0"><code>Edge
+
+Corner
+
+Texture
+
+Color pattern
+
+Shape</code></pre><p>따라서 우리가 처음부터 모든 것을 다시 학습할 필요가 없다.</p></section><section class="lesson" id="section-12"><h2><span class="secnum">12</span>Transfer Learning</h2><p>우리가 원하는 것은 ImageNet의 1000개 클래스를 분류하는 것이 아니다.</p><p>따라서 기존 classifier를 제거한다.</p><figure class="visual-flow"><figcaption>분류기 교체 준비</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Pretrained MobileNetV2</b></li><li style="--i:1"><span class="step-dot">02</span><b>Feature Extractor</b></li><li style="--i:2"><span class="step-dot">03</span><b>ImageNet 1000-class classifier 제거</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Pretrained MobileNetV2
+          │
+          ↓
+Feature Extractor
+          │
+          X
+ImageNet 1000-class classifier 제거</code></pre></details><p>대신 새로운 classifier를 연결한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Feature Extractor</div><span class="arrow" aria-hidden="true">→</span><div class="node">Dense</div><span class="arrow" aria-hidden="true">→</span><div class="node">6 Outputs</div></div><p>즉</p><pre tabindex="0"><code>Dog
+Cat
+Lion
+Tiger
+Elephant
+Other</code></pre><p>를 학습한다.</p><p>이것이 Transfer Learning이다.</p></section><section class="lesson" id="section-13"><h2><span class="secnum">13</span>Fine-tuning</h2><p>처음에는 MobileNetV2 backbone을 고정할 수 있다.</p><pre tabindex="0"><code>Backbone
+Weight update X
+
+Classifier
+Weight update O</code></pre><p>먼저 새로운 classifier를 학습시킨다.</p><p>그다음 필요하다면 일부 backbone layer도 다시 학습시킨다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Pretrained weight</div><span class="arrow" aria-hidden="true">→</span><div class="node">Slight modification</div><span class="arrow" aria-hidden="true">→</span><div class="node">Better fit to animal dataset</div></div><p>이것을 Fine-tuning이라고 한다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="system.html">← 시스템과 카메라</a><a href="mobilenet.html">CNN · MobileNetV2 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

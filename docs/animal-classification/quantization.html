@@ -1,0 +1,39 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>전처리와 양자화 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html" class="active" aria-current="page"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">05 / Deep dive · 37–44</p><h1>전처리와 양자화</h1><p class="lead">입력 정합성과 FP32 → INT8 변환</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-37">37. Preprocessing</a><a href="#section-38">38. Crop이 필요한 이유</a><a href="#section-39">39. Normalization</a><a href="#section-40">40. 가장 중요한 원칙</a><a href="#section-41">41. Quantization</a><a href="#section-42">42. Quantization의 기본 원리</a><a href="#section-43">43. Calibration Dataset</a><a href="#section-44">44. Quantization 후 반드시 확인할 것</a></nav><section class="lesson" id="section-37"><h2><span class="secnum">37</span>Preprocessing</h2><p>Camera frame은 DNN에 바로 넣을 수 없다.</p><p>예를 들어 Camera output이</p><pre tabindex="0"><code>1920 × 1080</code></pre><p>이고 DNN input이</p><pre tabindex="0"><code>224 × 224</code></pre><p>이면 다음 작업이 필요하다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Camera Frame</div><span class="arrow" aria-hidden="true">→</span><div class="node">Crop</div><span class="arrow" aria-hidden="true">→</span><div class="node">Resize</div><span class="arrow" aria-hidden="true">→</span><div class="node">Color Conversion</div><span class="arrow" aria-hidden="true">→</span><div class="node">Normalization</div><span class="arrow" aria-hidden="true">→</span><div class="node">Quantization Mapping</div><span class="arrow" aria-hidden="true">→</span><div class="node">Input Tensor</div></div></section><section class="lesson" id="section-38"><h2><span class="secnum">38</span>Crop이 필요한 이유</h2><p>1920×1080은</p><pre tabindex="0"><code>16:9</code></pre><p>이고 224×224는</p><pre tabindex="0"><code>1:1</code></pre><p>이다.</p><p>단순 resize를 하면</p><div class="flow" aria-label="단계별 흐름"><div class="node">Animal</div><span class="arrow" aria-hidden="true">→</span><div class="node">가로 또는 세로가 찌그러짐</div></div><p>이 발생할 수 있다.</p><p>따라서 보통</p><div class="flow" aria-label="단계별 흐름"><div class="node">Center Crop</div><span class="arrow" aria-hidden="true">→</span><div class="node">Square image</div><span class="arrow" aria-hidden="true">→</span><div class="node">224×224 Resize</div></div><p>를 사용한다.</p></section><section class="lesson" id="section-39"><h2><span class="secnum">39</span>Normalization</h2><p>Float model에서는 예를 들어 pixel 0~255를</p><pre tabindex="0"><code>-1 ~ +1</code></pre><p>범위로 변환할 수 있다.</p><p>수식은</p><div class="formula">x′ = x / 127.5 − 1</div><p>이다.</p><p>예를 들어</p><pre tabindex="0"><code>Pixel 0
+→ -1
+
+Pixel 127.5
+→ 0
+
+Pixel 255
+→ +1</code></pre><p>이다.</p></section><section class="lesson" id="section-40"><h2><span class="secnum">40</span>가장 중요한 원칙</h2><p>Training에서 사용한 preprocessing과 실제 STM32 inference preprocessing은 <strong>동일한 의미</strong>를 가져야 한다.</p><p>예를 들어 Training에서는 RGB인데 STM32에서 BGR을 넣으면 성능이 크게 떨어진다.</p><pre tabindex="0"><code>Training
+RGB
+
+STM32
+BGR</code></pre><p>→ Wrong</p><p>마찬가지로</p><pre tabindex="0"><code>Training
+[-1, +1]
+
+STM32
+[0, 255]</code></pre><p>인데 모델 quantization parameter와 맞지 않으면 결과가 틀어진다.</p><p>따라서 항상 다음을 확인해야 한다.</p><pre tabindex="0"><code>Image size
+
+RGB / BGR
+
+Crop method
+
+Resize method
+
+Normalization
+
+Quantization scale
+
+Zero point</code></pre></section><section class="lesson" id="section-41"><h2><span class="secnum">41</span>Quantization</h2><p>PC에서 학습한 network는 일반적으로 FP32이다.</p><pre tabindex="0"><code>Weight
+Activation
+
+32-bit float</code></pre><p>하지만 Edge AI에서는 INT8이 훨씬 효율적이다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">FP32 Model</div><span class="arrow" aria-hidden="true">→</span><div class="node">Quantization</div><span class="arrow" aria-hidden="true">→</span><div class="node">INT8 Model</div></div></section><section class="lesson" id="section-42"><h2><span class="secnum">42</span>Quantization의 기본 원리</h2><p>Float 값을 integer로 표현한다.</p><p>대략</p><div class="formula">q = round(x / scale) + zeroPoint</div><p>와 같은 관계를 사용한다.</p><p>반대로</p><div class="formula">x ≈ scale × (q − zeroPoint)</div><p>이다.</p><p>따라서 INT8 값만 저장하고 계산하면서도 원래 float 값과 비슷한 의미를 표현할 수 있다.</p></section><section class="lesson" id="section-43"><h2><span class="secnum">43</span>Calibration Dataset</h2><p>Quantization을 제대로 하기 위해서는 실제 입력 데이터 범위를 알아야 한다.</p><p>따라서 Training dataset 중 일부를 사용하여</p><pre tabindex="0"><code>Layer activation range</code></pre><p>를 측정한다.</p><p>이를 Calibration 또는 Representative Dataset이라고 한다.</p></section><section class="lesson" id="section-44"><h2><span class="secnum">44</span>Quantization 후 반드시 확인할 것</h2><p>예를 들어</p><pre tabindex="0"><code>FP32 Accuracy
+95.1 %
+
+INT8 Accuracy
+94.8 %</code></pre><p>이면 상당히 좋은 결과다.</p><p>반대로</p><pre tabindex="0"><code>FP32
+95 %
+
+INT8
+78 %</code></pre><p>가 되었다면 quantization 과정이나 operator 구조를 검토해야 한다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="classification.html">← 특징에서 분류까지</a><a href="runtime.html">배포와 실시간 처리 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

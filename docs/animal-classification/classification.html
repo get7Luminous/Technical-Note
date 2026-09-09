@@ -1,0 +1,73 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>특징에서 분류까지 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html" class="active" aria-current="page"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">04 / Deep dive · 29–36</p><h1>특징에서 분류까지</h1><p class="lead">Feature Map에서 Softmax와 최종 클래스까지</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-29">29. Feature Map</a><a href="#section-30">30. Global Average Pooling</a><a href="#section-31">31. Embedding과의 관계</a><a href="#section-32">32. Dense Layer</a><a href="#section-33">33. Logit</a><a href="#section-34">34. Softmax</a><a href="#section-35">35. Argmax</a><a href="#section-36">36. DNN 내부 전체 흐름</a></nav><section class="lesson" id="section-29"><h2><span class="secnum">29</span>Feature Map</h2><p>CNN layer의 출력은 보통 여러 장의 feature map으로 표현된다.</p><p>예를 들어</p><pre tabindex="0"><code>7 × 7 × 1280</code></pre><p>이라면</p><pre tabindex="0"><code>7 × 7 spatial information
+
+×
+
+1280 different features</code></pre><p>를 의미한다.</p><p>각 channel은 서로 다른 feature에 반응한다.</p></section><section class="lesson" id="section-30"><h2><span class="secnum">30</span>Global Average Pooling</h2><p>마지막 CNN feature가</p><pre tabindex="0"><code>7 × 7 × 1280</code></pre><p>이라면 7×7 공간의 평균을 각 channel마다 계산한다.</p><p>결과는</p><pre tabindex="0"><code>1 × 1 × 1280</code></pre><p>즉</p><pre tabindex="0"><code>1280-dimensional vector</code></pre><p>가 된다.</p><p>예를 들어</p><pre tabindex="0"><code>[
+0.13,
+0.81,
+0.02,
+...
+0.56
+]</code></pre><p>와 같은 형태이다.</p><p>이 벡터는 이미지에서 추출된 고수준 feature 표현이라고 볼 수 있다.</p></section><section class="lesson" id="section-31"><h2><span class="secnum">31</span>Embedding과의 관계</h2><p>이 1280-dimensional feature vector는 넓은 의미에서 <strong>Embedding</strong>이라고 볼 수 있다.</p><p>즉 원래 이미지는</p><pre tabindex="0"><code>224 × 224 × 3
+≈ 150,000 values</code></pre><p>였지만 DNN이 의미 있는 feature를 추출하여</p><pre tabindex="0"><code>1280-dimensional representation</code></pre><p>으로 변환하였다.</p><p>즉</p><div class="flow" aria-label="단계별 흐름"><div class="node">Image</div><span class="arrow" aria-hidden="true">→</span><div class="node">DNN Feature Extractor</div><span class="arrow" aria-hidden="true">→</span><div class="node">Embedding</div></div><p>이다.</p><p>Image Classification에서는 이 embedding을 곧바로 classifier에 넣는다.</p></section><section class="lesson" id="section-32"><h2><span class="secnum">32</span>Dense Layer</h2><p>이제 1280개의 feature로부터 6개의 class score를 계산한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">1280 Features</div><span class="arrow" aria-hidden="true">→</span><div class="node">Dense Layer</div><span class="arrow" aria-hidden="true">→</span><div class="node">6 outputs</div></div><p>하나의 출력은 다음과 같이 계산된다.</p><div class="formula">zᵢ = ∑ⱼ wᵢⱼhⱼ + bᵢ</div><p>여기서</p><pre tabindex="0"><code>h = Feature / Embedding
+
+w = Learned weight
+
+b = Bias
+
+z = Class score</code></pre><p>이다.</p></section><section class="lesson" id="section-33"><h2><span class="secnum">33</span>Logit</h2><p>Dense layer 출력은 보통 probability가 아니다.</p><p>예를 들어</p><pre tabindex="0"><code>Dog        1.1
+Cat        0.7
+Lion       4.2
+Tiger      2.1
+Elephant  -0.4
+Other      0.1</code></pre><p>같은 값일 수 있다.</p><p>이러한 값을 <strong>Logit</strong>이라고 한다.</p><p>크기가 클수록 해당 class를 더 강하게 예측한다는 뜻이다.</p></section><section class="lesson" id="section-34"><h2><span class="secnum">34</span>Softmax</h2><p>Logit을 사람이 이해하기 쉬운 확률 형태로 바꾸는 것이 Softmax이다.</p><div class="formula">P<sub>i</sub> = e<sup>z<sub>i</sub></sup> / ∑<sub>j</sub> e<sup>z<sub>j</sub></sup></div><p>결과는 예를 들어</p><pre tabindex="0"><code>Dog        3.5 %
+
+Cat        2.4 %
+
+Lion      83.5 %
+
+Tiger      9.3 %
+
+Elephant   0.5 %
+
+Other      0.8 %</code></pre><p>이다.</p><p>모든 값을 더하면</p><pre tabindex="0"><code>100 %</code></pre><p>가 된다.</p></section><section class="lesson" id="section-35"><h2><span class="secnum">35</span>Argmax</h2><p>가장 높은 probability를 선택한다.</p><pre tabindex="0"><code>Dog       0.035
+
+Cat       0.024
+
+Lion      0.835   ← MAX
+
+Tiger     0.093</code></pre><p>따라서</p><div class="flow" aria-label="단계별 흐름"><div class="node">Argmax</div><span class="arrow" aria-hidden="true">→</span><div class="node">Lion</div></div><p>이다.</p></section><section class="lesson" id="section-36"><h2><span class="secnum">36</span>DNN 내부 전체 흐름</h2><p>이를 한 번에 보면 다음과 같다.</p><figure class="visual-flow"><figcaption>DNN Inference</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>RGB Image · 224 × 224 × 3</b></li><li style="--i:1"><span class="step-dot">02</span><b>Input Tensor</b></li><li style="--i:2"><span class="step-dot">03</span><b>Conv → BN → ReLU6</b></li><li style="--i:3"><span class="step-dot">04</span><b>Inverted Residual · Expansion / Depthwise / Projection / Residual</b></li><li style="--i:4"><span class="step-dot">05</span><b>High-level Feature Maps</b></li><li style="--i:5"><span class="step-dot">06</span><b>Global Average Pooling</b></li><li style="--i:6"><span class="step-dot">07</span><b>Embedding / Feature Vector</b></li><li style="--i:7"><span class="step-dot">08</span><b>Dense → Logits</b></li><li style="--i:8"><span class="step-dot">09</span><b>Softmax → Class Probabilities</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>RGB Image
+224×224×3
+     │
+     ↓
+Input Tensor
+     │
+     ↓
+Conv
+     ↓
+BN
+     ↓
+ReLU6
+     ↓
+Inverted Residual Blocks
+     │
+     ├─ Expansion
+     ├─ Depthwise Conv
+     ├─ ReLU6
+     ├─ Projection
+     └─ Residual
+     │
+     ↓
+High-level Feature Maps
+     ↓
+Global Average Pooling
+     ↓
+Embedding / Feature Vector
+     ↓
+Dense
+     ↓
+Logits
+     ↓
+Softmax
+     ↓
+Class Probabilities</code></pre></details><p>이 전체가 <strong>DNN Inference</strong>이다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="mobilenet.html">← CNN · MobileNetV2</a><a href="quantization.html">전처리와 양자화 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

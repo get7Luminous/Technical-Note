@@ -7,6 +7,7 @@ HTML로 작성한 기술 노트를 한곳에서 관리하고 GitHub Pages로 공
 - **Deep Neural Network** — MLP, CNN, RNN/LSTM, Transformer
 - **Speaker Identification** — 음성 신호부터 화자 임베딩과 판정까지
 - **Face Identification** — STM32N6 기반 얼굴 식별 파이프라인
+- **Animal Classification** — STM32N6570-DK 기반 동물 분류 Edge AI 구현 흐름
 
 ## 공개 구조
 
@@ -19,6 +20,8 @@ docs/
 ├─ dnn/
 │  └─ index.html
 ├─ speaker-identification/
+│  └─ index.html
+├─ animal-classification/
 │  └─ index.html
 └─ id6-face-identification/
    └─ index.html

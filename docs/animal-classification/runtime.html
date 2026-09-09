@@ -1,0 +1,84 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>배포와 실시간 처리 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html" class="active" aria-current="page"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">06 / Deep dive · 45–54</p><h1>배포와 실시간 처리</h1><p class="lead">Neural-ART, 캐시와 프레임 버퍼</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-45">45. ST Edge AI Toolchain의 역할</a><a href="#section-46">46. Neural-ART NPU의 역할</a><a href="#section-47">47. Weight는 어디서 사용되는가?</a><a href="#section-48">48. Postprocessing</a><a href="#section-49">49. Confidence Threshold</a><a href="#section-50">50. Temporal Filtering</a><a href="#section-51">51. STM32 Runtime Pipeline</a><a href="#section-52">52. Cache가 중요한 이유</a><a href="#section-53">53. Frame Buffer 구조</a><a href="#section-54">54. 최종 실시간 Pipeline</a></nav><section class="lesson" id="section-45"><h2><span class="secnum">45</span>ST Edge AI Toolchain의 역할</h2><p>INT8 TFLite 또는 ONNX 모델이 만들어졌다고 STM32가 그대로 실행할 수 있는 것은 아니다.</p><p>ST의 AI toolchain이 모델을 분석한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">TFLite / ONNX</div><span class="arrow" aria-hidden="true">→</span><div class="node">ST Edge AI Core</div><span class="arrow" aria-hidden="true">→</span><div class="node">Operator Analysis</div><span class="arrow" aria-hidden="true">→</span><div class="node">Memory Planning</div><span class="arrow" aria-hidden="true">→</span><div class="node">Neural-ART Mapping</div><span class="arrow" aria-hidden="true">→</span><div class="node">Executable Network</div></div></section><section class="lesson" id="section-46"><h2><span class="secnum">46</span>Neural-ART NPU의 역할</h2><p>Neural-ART Accelerator는 DNN 내부의 대량 계산을 담당한다.</p><p>예를 들어</p><pre tabindex="0"><code>Convolution
+
+Depthwise Convolution
+
+Pointwise Convolution
+
+Activation
+
+Pooling</code></pre><p>같은 연산을 CPU보다 훨씬 효율적으로 처리한다.</p><p>전체 시스템 역할을 나누면 다음과 같다.</p><figure class="visual-flow"><figcaption>CPU 역할</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Cortex-M55 · 제어와 스케줄링</b></li><li style="--i:1"><span class="step-dot">02</span><b>Camera / Peripheral / AI scheduling / Postprocessing / LCD / Application</b></li></ol></figure><figure class="visual-flow"><figcaption>NPU 역할</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Neural-ART NPU</b></li><li style="--i:1"><span class="step-dot">02</span><b>DNN numerical computation</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Cortex-M55
+   │
+   ├─ Camera control
+   ├─ Peripheral control
+   ├─ AI scheduling
+   ├─ Postprocessing
+   ├─ LCD
+   └─ Application logic
+
+
+Neural-ART NPU
+   │
+   └─ DNN numerical computation</code></pre></details></section><section class="lesson" id="section-47"><h2><span class="secnum">47</span>Weight는 어디서 사용되는가?</h2><p>Training 후 학습된 weight가 최종 모델 안에 저장된다.</p><figure class="visual-flow"><figcaption>배포 모델</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Model</b></li><li style="--i:1"><span class="step-dot">02</span><b>Network structure + Millions of learned weights</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Model
+ │
+ ├─ Network structure
+ │
+ └─ Millions of learned weights</code></pre></details><p>Inference 시 NPU는</p><pre tabindex="0"><code>Input Tensor
+
++
+
+Model Weights</code></pre><p>를 사용하여 layer 계산을 수행한다.</p><p>즉 Neural-ART가 임의로 판단하는 것이 아니다.</p><p>Training에서 만들어진 weight를 기반으로 연산한다.</p></section><section class="lesson" id="section-48"><h2><span class="secnum">48</span>Postprocessing</h2><p>Image Classification은 Object Detection보다 후처리가 간단하다.</p><p>기본적으로</p><div class="flow" aria-label="단계별 흐름"><div class="node">Softmax</div><span class="arrow" aria-hidden="true">→</span><div class="node">Argmax</div></div><p>만으로 결과를 얻을 수 있다.</p><p>하지만 실제 제품에서는 다음을 추가하는 것이 좋다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Softmax</div><span class="arrow" aria-hidden="true">→</span><div class="node">Argmax</div><span class="arrow" aria-hidden="true">→</span><div class="node">Confidence Threshold</div><span class="arrow" aria-hidden="true">→</span><div class="node">Temporal Filtering</div><span class="arrow" aria-hidden="true">→</span><div class="node">Application</div></div></section><section class="lesson" id="section-49"><h2><span class="secnum">49</span>Confidence Threshold</h2><p>예를 들어</p><pre tabindex="0"><code>Lion : 42 %</code></pre><p>라면 확신이 낮다고 볼 수 있다.</p><p>따라서</p><pre tabindex="0"><code>if confidence &gt; 70 %
+    show class
+else
+    show Unknown</code></pre><p>처럼 처리할 수 있다.</p></section><section class="lesson" id="section-50"><h2><span class="secnum">50</span>Temporal Filtering</h2><p>Video에서는 frame마다 결과가 조금씩 변할 수 있다.</p><pre tabindex="0"><code>Frame 1
+Lion 82 %
+
+Frame 2
+Tiger 55 %
+
+Frame 3
+Lion 87 %
+
+Frame 4
+Lion 91 %</code></pre><p>그대로 표시하면 화면이 흔들려 보인다.</p><p>따라서 최근 여러 frame의 probability를 평균낼 수 있다.</p><pre tabindex="0"><code>Pfiltered =
+(P1 + P2 + P3 + P4) / 4</code></pre><p>또는 같은 class가 연속으로 몇 번 검출된 경우에만 결과를 변경할 수도 있다.</p></section><section class="lesson" id="section-51"><h2><span class="secnum">51</span>STM32 Runtime Pipeline</h2><p>실제 runtime 흐름은 다음과 같이 볼 수 있다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Camera Capture</div><span class="arrow" aria-hidden="true">→</span><div class="node">Frame Complete</div><span class="arrow" aria-hidden="true">→</span><div class="node">DCMIPP Processing</div><span class="arrow" aria-hidden="true">→</span><div class="node">AI Input Ready</div><span class="arrow" aria-hidden="true">→</span><div class="node">Cache Maintenance</div><span class="arrow" aria-hidden="true">→</span><div class="node">Neural-ART Inference</div><span class="arrow" aria-hidden="true">→</span><div class="node">Output Tensor</div><span class="arrow" aria-hidden="true">→</span><div class="node">Argmax / Threshold</div><span class="arrow" aria-hidden="true">→</span><div class="node">Temporal Filter</div><span class="arrow" aria-hidden="true">→</span><div class="node">LCD</div></div></section><section class="lesson" id="section-52"><h2><span class="secnum">52</span>Cache가 중요한 이유</h2><p>DCMIPP 또는 DMA가 memory에 새 영상을 썼더라도 CPU cache에 예전 image가 남아 있을 수 있다.</p><p>예를 들어</p><pre tabindex="0"><code>Memory
+Frame 100
+
+CPU Cache
+Frame 99</code></pre><p>상태라면 CPU 또는 AI subsystem이 잘못된 데이터를 볼 수 있다.</p><p>따라서 DMA/DCMIPP와 CPU/NPU가 공유하는 buffer에 대해서는</p><pre tabindex="0"><code>Cache Clean
+
+Cache Invalidate
+
+Memory attributes</code></pre><p>를 정확하게 관리해야 한다.</p><p>이는 STM32N6 같은 고성능 MCU에서 상당히 중요한 부분이다.</p></section><section class="lesson" id="section-53"><h2><span class="secnum">53</span>Frame Buffer 구조</h2><p>성능을 높이기 위해 하나의 buffer만 사용하는 것보다 여러 buffer를 사용하는 것이 좋다.</p><p>예를 들어 Double Buffering:</p><pre tabindex="0"><code>Buffer A
+Camera Capture
+
+Buffer B
+AI Inference</code></pre><p>다음 frame에서는</p><pre tabindex="0"><code>Buffer A
+AI Inference
+
+Buffer B
+Camera Capture</code></pre><p>처럼 역할을 바꾼다.</p><p>그러면</p><pre tabindex="0"><code>Capture
++
+Inference</code></pre><p>를 어느 정도 동시에 수행할 수 있다.</p></section><section class="lesson" id="section-54"><h2><span class="secnum">54</span>최종 실시간 Pipeline</h2><p>최종적으로는 다음 구조를 목표로 할 수 있다.</p><figure class="visual-flow"><figcaption>Frame N 처리</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Frame N · Camera Capture</b></li><li style="--i:1"><span class="step-dot">02</span><b>DCMIPP</b></li><li style="--i:2"><span class="step-dot">03</span><b>AI Input Buffer</b></li><li style="--i:3"><span class="step-dot">04</span><b>Neural-ART</b></li><li style="--i:4"><span class="step-dot">05</span><b>Classification</b></li></ol></figure><div class="branch-note">병행 처리 ↗ Frame N+1 · Camera Capture</div><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Frame N
+Camera Capture
+      │
+      ↓
+DCMIPP
+      │
+      ↓
+AI Input Buffer
+      │
+      ↓
+Neural-ART
+      │
+      ↓
+Classification
+
+
+동시에
+
+
+Frame N+1
+Camera Capture</code></pre></details><p>즉</p><pre tabindex="0"><code>Capture
+Preprocessing
+Inference
+Display</code></pre><p>를 pipeline 형태로 처리한다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="quantization.html">← 전처리와 양자화</a><a href="implementation.html">구현 순서와 전체 흐름 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

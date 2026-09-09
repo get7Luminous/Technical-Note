@@ -1,0 +1,132 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>CNN · MobileNetV2 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html" class="active" aria-current="page"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">03 / Deep dive · 14–28</p><h1>CNN · MobileNetV2</h1><p class="lead">합성곱과 Inverted Residual의 내부 구조</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-14">14. DNN 전체 구조</a><a href="#section-15">15. Input Layer</a><a href="#section-16">16. Convolution Layer</a><a href="#section-17">17. Weight는 무엇인가?</a><a href="#section-18">18. Activation Function</a><a href="#section-19">19. Batch Normalization</a><a href="#section-20">20. MobileNetV2의 핵심: Depthwise Separable Convolution</a><a href="#section-21">21. Depthwise Convolution</a><a href="#section-22">22. Pointwise Convolution</a><a href="#section-23">23. MobileNetV2 Inverted Residual Block</a><a href="#section-24">24. Expansion은 무엇인가?</a><a href="#section-25">25. Projection</a><a href="#section-26">26. 왜 마지막에는 ReLU가 없는가?</a><a href="#section-27">27. Residual Connection</a><a href="#section-28">28. CNN이 깊어지면서 Feature가 어떻게 변하는가?</a></nav><section class="lesson" id="section-14"><h2><span class="secnum">14</span>DNN 전체 구조</h2><p>이제 실제 DNN 내부를 살펴보자.</p><p>전체적인 구조는 다음과 같다.</p><figure class="visual-flow"><figcaption>DNN 전체 구조</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Input · 224 × 224 × 3</b></li><li style="--i:1"><span class="step-dot">02</span><b>Convolution → BatchNorm → ReLU6</b></li><li style="--i:2"><span class="step-dot">03</span><b>Inverted Residual Blocks</b></li><li style="--i:3"><span class="step-dot">04</span><b>Feature Maps</b></li><li style="--i:4"><span class="step-dot">05</span><b>Global Average Pooling</b></li><li style="--i:5"><span class="step-dot">06</span><b>Feature Vector</b></li><li style="--i:6"><span class="step-dot">07</span><b>Dense → 6 Logits</b></li><li style="--i:7"><span class="step-dot">08</span><b>Softmax → 6 Probabilities</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Input Layer
+224 × 224 × 3
+       │
+       ↓
+Convolution
+       ↓
+Batch Normalization
+       ↓
+ReLU6
+       ↓
+Inverted Residual Blocks
+       ↓
+Feature Maps
+       ↓
+Global Average Pooling
+       ↓
+Feature Vector
+       ↓
+Dense Layer
+       ↓
+6 Logits
+       ↓
+Softmax
+       ↓
+6 Probabilities</code></pre></details></section><section class="lesson" id="section-15"><h2><span class="secnum">15</span>Input Layer</h2><p>DNN 입력은 다음 형태이다.</p><pre tabindex="0"><code>224 × 224 × 3</code></pre><p>Tensor로 표현하면 일반적으로</p><pre tabindex="0"><code>[1, 224, 224, 3]</code></pre><p>이다.</p><p>각 의미는</p><pre tabindex="0"><code>1   : Batch
+
+224 : Height
+
+224 : Width
+
+3   : RGB Channels</code></pre><p>이다.</p><p>즉 DNN은 카메라 이미지를 그대로 이해하는 것이 아니라 <strong>숫자로 구성된 Tensor</strong>를 입력으로 받는다.</p></section><section class="lesson" id="section-16"><h2><span class="secnum">16</span>Convolution Layer</h2><p>CNN의 핵심은 Convolution이다.</p><p>간단히 말하면 작은 Filter를 이미지 위에서 이동시키면서 특정 feature를 찾는다.</p><p>예를 들어 3×3 filter라면</p><pre tabindex="0"><code>Image
+
+x x x
+x x x
+x x x</code></pre><p>영역에 대해</p><pre tabindex="0"><code>Filter
+
+w1 w2 w3
+w4 w5 w6
+w7 w8 w9</code></pre><p>를 적용한다.</p><p>계산은 대략</p><div class="formula">y = w₁x₁ + w₂x₂ + … + w₉x₉ + b</div><p>이다.</p><p>여기서</p><pre tabindex="0"><code>x = Input data
+
+w = Weight
+
+b = Bias
+
+y = Output feature</code></pre><p>이다.</p></section><section class="lesson" id="section-17"><h2><span class="secnum">17</span>Weight는 무엇인가?</h2><p>Weight는 DNN이 &quot;무엇을 중요하게 볼 것인가&quot;를 결정하는 학습된 parameter이다.</p><p>예를 들어 특정 filter가 수직 edge를 검출하도록 학습되었다면</p><pre tabindex="0"><code>Dark | Bright</code></pre><p>와 같은 패턴에 강하게 반응하는 weight를 가지게 된다.</p><p>중요한 점은</p><blockquote>사람이 &quot;이 weight는 귀를 찾고, 이 weight는 털을 찾는다&quot;고 직접 지정하는 것이 아니다.</blockquote><p>Training 과정에서 Loss를 줄이도록 weight가 자동으로 업데이트된다.</p></section><section class="lesson" id="section-18"><h2><span class="secnum">18</span>Activation Function</h2><p>Convolution만 계속 사용하면 전체 network가 본질적으로 Linear function의 조합이 된다.</p><p>복잡한 패턴을 학습하려면 Nonlinearity가 필요하다.</p><p>MobileNetV2에서는 대표적으로 ReLU6를 사용한다.</p><div class="formula">ReLU6(x) = min(max(0, x), 6)</div><p>즉</p><pre tabindex="0"><code>x &lt; 0
+→ 0
+
+0 ≤ x ≤ 6
+→ x
+
+x &gt; 6
+→ 6</code></pre><p>이다.</p><p>예를 들어</p><pre tabindex="0"><code>Input
+
+-3
+ 2
+10</code></pre><p>이면</p><pre tabindex="0"><code>Output
+
+0
+2
+6</code></pre><p>이 된다.</p></section><section class="lesson" id="section-19"><h2><span class="secnum">19</span>Batch Normalization</h2><p>Conv 뒤에는 흔히 Batch Normalization이 사용된다.</p><p>개념적으로는 layer의 출력 분포를 적절한 범위로 조정한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Conv output</div><span class="arrow" aria-hidden="true">→</span><div class="node">Normalization</div><span class="arrow" aria-hidden="true">→</span><div class="node">Scale</div><span class="arrow" aria-hidden="true">→</span><div class="node">Offset</div></div><p>Training을 안정화하고 빠르게 만드는 데 도움이 된다.</p><p>Inference에서는 Training 중 계산된 parameter가 사용된다.</p></section><section class="lesson" id="section-20"><h2><span class="secnum">20</span>MobileNetV2의 핵심: Depthwise Separable Convolution</h2><p>일반 convolution은 연산량이 상당히 크다.</p><p>MobileNet 계열은 이를 두 단계로 나눈다.</p><pre tabindex="0"><code>Standard Convolution
+
+Spatial filtering
++
+Channel mixing</code></pre><p>을</p><pre tabindex="0"><code>Depthwise Convolution
+        +
+Pointwise Convolution</code></pre><p>으로 분리한다.</p></section><section class="lesson" id="section-21"><h2><span class="secnum">21</span>Depthwise Convolution</h2><p>RGB 또는 여러 feature channel에 대해 각 channel마다 독립적인 spatial filter를 적용한다.</p><pre tabindex="0"><code>Channel 1 ─→ Filter 1
+
+Channel 2 ─→ Filter 2
+
+Channel 3 ─→ Filter 3</code></pre><p>즉 spatial feature를 찾는 역할이 크다.</p></section><section class="lesson" id="section-22"><h2><span class="secnum">22</span>Pointwise Convolution</h2><p>Pointwise convolution은</p><pre tabindex="0"><code>1 × 1 convolution</code></pre><p>이다.</p><p>공간적으로 주변 pixel을 보는 것이 아니라 channel들을 서로 조합한다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Channel 1<br>Channel 2<br>Channel 3</div><span class="arrow" aria-hidden="true">→</span><div class="node">1×1 Conv</div><span class="arrow" aria-hidden="true">→</span><div class="node">New channel representation</div></div><p>Depthwise + Pointwise를 사용하면 standard convolution보다 계산량을 크게 줄일 수 있다.</p></section><section class="lesson" id="section-23"><h2><span class="secnum">23</span>MobileNetV2 Inverted Residual Block</h2><p>MobileNetV2의 핵심 Hidden Layer는 다음 구조이다.</p><figure class="visual-flow"><figcaption>MobileNetV2 Inverted Residual Block</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Input</b></li><li style="--i:1"><span class="step-dot">02</span><b>1×1 Conv · Expansion</b></li><li style="--i:2"><span class="step-dot">03</span><b>BN → ReLU6</b></li><li style="--i:3"><span class="step-dot">04</span><b>3×3 Depthwise Conv</b></li><li style="--i:4"><span class="step-dot">05</span><b>BN → ReLU6</b></li><li style="--i:5"><span class="step-dot">06</span><b>1×1 Conv · Projection</b></li><li style="--i:6"><span class="step-dot">07</span><b>BN → Linear</b></li><li style="--i:7"><span class="step-dot">08</span><b>Residual 합산 → Output</b></li></ol></figure><div class="branch-note">Input ─────────→ 합산 ⊕ · 입력과 출력 shape이 같은 경우의 우회 연결</div><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Input
+  │
+  ↓
+1×1 Conv
+Expansion
+  │
+  ↓
+BN
+  │
+  ↓
+ReLU6
+  │
+  ↓
+3×3 Depthwise Conv
+  │
+  ↓
+BN
+  │
+  ↓
+ReLU6
+  │
+  ↓
+1×1 Conv
+Projection
+  │
+  ↓
+BN
+  │
+  ↓
+Linear
+  │
+  +──────── Residual
+  │
+  ↓
+Output</code></pre></details></section><section class="lesson" id="section-24"><h2><span class="secnum">24</span>Expansion은 무엇인가?</h2><p>입력 channel이 예를 들어 32라면 내부 계산에서는 channel 수를 늘릴 수 있다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">32 Channels</div><span class="arrow" aria-hidden="true">→</span><div class="node">1×1 Expansion</div><span class="arrow" aria-hidden="true">→</span><div class="node">192 Channels</div></div><p>이렇게 feature 표현 공간을 넓힌다.</p></section><section class="lesson" id="section-25"><h2><span class="secnum">25</span>Projection</h2><p>Depthwise convolution 후 다시 channel 수를 줄인다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">192</div><span class="arrow" aria-hidden="true">→</span><div class="node">1×1 Conv</div><span class="arrow" aria-hidden="true">→</span><div class="node">32</div></div><p>이것이 Projection이다.</p></section><section class="lesson" id="section-26"><h2><span class="secnum">26</span>왜 마지막에는 ReLU가 없는가?</h2><p>MobileNetV2에서는 Projection 뒤에 일반적으로 ReLU6를 사용하지 않는다.</p><div class="flow" aria-label="블록별 활성화 함수"><div class="node">Expansion<br>↓<br>ReLU6</div><span class="arrow" aria-hidden="true">→</span><div class="node">Depthwise<br>↓<br>ReLU6</div><span class="arrow" aria-hidden="true">→</span><div class="node">Projection<br>↓<br>Linear</div></div><p>좁은 bottleneck feature에 activation을 적용하면 중요한 정보가 손실될 가능성이 있기 때문이다.</p><p>이를 <strong>Linear Bottleneck</strong>이라고 부른다.</p></section><section class="lesson" id="section-27"><h2><span class="secnum">27</span>Residual Connection</h2><p>입력과 출력 shape이 같을 경우 다음과 같은 연결을 사용할 수 있다.</p><figure class="visual-flow"><figcaption>Residual Connection</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Input x</b></li><li style="--i:1"><span class="step-dot">02</span><b>Conv Blocks · F(x)</b></li><li style="--i:2"><span class="step-dot">03</span><b>⊕ 입력 x를 더함</b></li><li style="--i:3"><span class="step-dot">04</span><b>Output · F(x) + x</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Input ─────────────┐
+                   +
+Conv Blocks ───────┘
+                   ↓
+                 Output</code></pre></details><p>수식으로는</p><div class="formula">y = F(x) + x</div><p>이다.</p><p>Network가 매우 깊어졌을 때 학습을 안정적으로 만드는 데 도움이 된다.</p></section><section class="lesson" id="section-28"><h2><span class="secnum">28</span>CNN이 깊어지면서 Feature가 어떻게 변하는가?</h2><p>초기 layer는 비교적 단순한 feature를 본다.</p><pre tabindex="0"><code>Edge
+
+Line
+
+Corner
+
+Color change</code></pre><p>조금 깊어지면</p><pre tabindex="0"><code>Texture
+
+Hair pattern
+
+Eye
+
+Nose
+
+Ear</code></pre><p>더 깊어지면</p><pre tabindex="0"><code>Animal face
+
+Body shape
+
+Mane
+
+Stripe pattern</code></pre><p>최종적으로는</p><pre tabindex="0"><code>Dog-like representation
+
+Cat-like representation
+
+Lion-like representation</code></pre><p>같은 고수준 feature가 형성된다.</p><p>중요한 점은 이런 feature 역시 사람이 직접 프로그램한 것이 아니라 학습된 weight의 결과라는 것이다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="training.html">← 데이터와 학습</a><a href="classification.html">특징에서 분류까지 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>

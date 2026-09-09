@@ -1,0 +1,177 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>구현 순서와 전체 흐름 | STM32N6570-DK Animal Classification</title><link rel="stylesheet" href="assets/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="top"><a class="brand" href="../index.html">← TECHNICAL NOTES / NOTE 04</a><div class="tools"><button id="print" type="button">인쇄 / PDF</button><button class="menu" type="button" aria-expanded="false" aria-controls="guide">목차</button></div></header><div class="layout"><aside id="guide"><p class="label">Animal Classification</p><nav aria-label="주제별 메뉴"><a href="index.html"><span>00</span>전체 흐름</a><a href="system.html"><span>01</span>시스템과 카메라</a><a href="training.html"><span>02</span>데이터와 학습</a><a href="mobilenet.html"><span>03</span>CNN · MobileNetV2</a><a href="classification.html"><span>04</span>특징에서 분류까지</a><a href="quantization.html"><span>05</span>전처리와 양자화</a><a href="runtime.html"><span>06</span>배포와 실시간 처리</a><a href="implementation.html" class="active" aria-current="page"><span>07</span>구현 순서와 전체 흐름</a></nav><p class="sidebar-note">전체 흐름을 먼저 살펴본 뒤 필요한 주제로 이동하세요.<br>원문 57개 항목은 7개 상세 페이지에 나누어 담았습니다.</p></aside><main id="main"><header class="hero"><p class="eyebrow">07 / Deep dive · 55–57</p><h1>구현 순서와 전체 흐름</h1><p class="lead">14단계 구현 순서와 시스템 연결</p></header><nav class="page-toc" aria-label="이 페이지의 항목"><a href="#section-55">55. 구현 순서</a><a href="#section-56">56. 전체 Application을 하나로 연결하면</a><a href="#section-57">57. 이 프로젝트에서 핵심 개념들의 관계</a></nav><section class="lesson" id="section-55"><h2><span class="secnum">55</span>구현 순서</h2><p>실제로 개발한다면 다음 순서가 가장 안정적이다.</p><h3>Step 1 — Board Bring-up</h3><pre tabindex="0"><code>Clock
+
+MPU
+
+Cache
+
+Memory
+
+UART
+
+LCD</code></pre><p>를 먼저 확인한다.</p><h3>Step 2 — Camera Bring-up</h3><pre tabindex="0"><code>I2C
+
+IMX335 ID
+
+Sensor Init
+
+MIPI CSI-2
+
+DCMIPP</code></pre><p>를 확인한다.</p><p>목표:</p><pre tabindex="0"><code>Camera → LCD</code></pre><h3>Step 3 — Dataset 준비</h3><pre tabindex="0"><code>Dog
+Cat
+Lion
+Tiger
+Elephant
+Other</code></pre><p>Dataset을 구축한다.</p><h3>Step 4 — Pretrained Model 선택</h3><pre tabindex="0"><code>MobileNetV2
+
+ImageNet pretrained</code></pre><h3>Step 5 — Transfer Learning</h3><div class="flow" aria-label="단계별 흐름"><div class="node">Existing classifier 제거</div><span class="arrow" aria-hidden="true">→</span><div class="node">6-class classifier 추가</div></div><h3>Step 6 — Training</h3><div class="flow" aria-label="단계별 흐름"><div class="node">Train</div><span class="arrow" aria-hidden="true">→</span><div class="node">Validation</div><span class="arrow" aria-hidden="true">→</span><div class="node">Test</div></div><h3>Step 7 — Fine-tuning</h3><p>필요하다면 backbone 일부를 다시 학습한다.</p><h3>Step 8 — FP32 Evaluation</h3><pre tabindex="0"><code>Accuracy
+
+Confusion Matrix
+
+Class별 Precision / Recall</code></pre><p>등을 확인한다.</p><h3>Step 9 — INT8 Quantization</h3><div class="flow" aria-label="단계별 흐름"><div class="node">FP32</div><span class="arrow" aria-hidden="true">→</span><div class="node">INT8</div></div><h3>Step 10 — Quantized Model Evaluation</h3><pre tabindex="0"><code>FP32 Accuracy
+vs
+INT8 Accuracy</code></pre><p>비교한다.</p><h3>Step 11 — ST Edge AI Conversion</h3><div class="flow" aria-label="단계별 흐름"><div class="node">INT8 TFLite</div><span class="arrow" aria-hidden="true">→</span><div class="node">ST Edge AI</div><span class="arrow" aria-hidden="true">→</span><div class="node">Neural-ART compatible model</div></div><h3>Step 12 — STM32 Integration</h3><div class="flow" aria-label="단계별 흐름"><div class="node">Camera</div><span class="arrow" aria-hidden="true">→</span><div class="node">DCMIPP</div><span class="arrow" aria-hidden="true">→</span><div class="node">AI Input</div><span class="arrow" aria-hidden="true">→</span><div class="node">Neural-ART</div></div><p>을 연결한다.</p><h3>Step 13 — Postprocessing</h3><pre tabindex="0"><code>Softmax
+
+Argmax
+
+Confidence
+
+Temporal filtering</code></pre><p>을 적용한다.</p><h3>Step 14 — LCD Application</h3><p>최종 결과를</p><figure class="visual-flow"><figcaption>LCD 결과 화면 예시</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Camera Preview</b></li><li style="--i:1"><span class="step-dot">02</span><b>LION</b></li><li style="--i:2"><span class="step-dot">03</span><b>Confidence : 93 %</b></li></ol></figure><p>처럼 표시한다.</p></section><section class="lesson" id="section-56"><h2><span class="secnum">56</span>전체 Application을 하나로 연결하면</h2><figure class="visual-flow"><figcaption>개발에서 배포까지</figcaption><div class="lanes"><div><figure class="visual-flow"><figcaption>PC / Training Side</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Animal Images → Dataset</b></li><li style="--i:1"><span class="step-dot">02</span><b>Data Augmentation → Preprocessing</b></li><li style="--i:2"><span class="step-dot">03</span><b>ImageNet Pretrained MobileNetV2</b></li><li style="--i:3"><span class="step-dot">04</span><b>Transfer Learning → Fine-tuning</b></li><li style="--i:4"><span class="step-dot">05</span><b>FP32 Model → Quantization → INT8 Model</b></li><li style="--i:5"><span class="step-dot">06</span><b>ST Edge AI Core → Neural-ART Mapping</b></li></ol></figure></div><div><figure class="visual-flow"><figcaption>STM32N6570-DK / Edge Side</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>IMX335 → MIPI CSI-2 → DCMIPP</b></li><li style="--i:1"><span class="step-dot">02</span><b>Crop / Resize / RGB → 224 × 224 × 3</b></li><li style="--i:2"><span class="step-dot">03</span><b>Input Tensor</b></li><li style="--i:3"><span class="step-dot">04</span><b>Conv → BN → ReLU6 → Inverted Residual</b></li><li style="--i:4"><span class="step-dot">05</span><b>Feature Extraction → GAP → Embedding</b></li><li style="--i:5"><span class="step-dot">06</span><b>Dense → Logits → Softmax</b></li><li style="--i:6"><span class="step-dot">07</span><b>Dog .02 / Cat .01 / Lion .91 / Tiger .03 / Elephant .01 / Other .02</b></li><li style="--i:7"><span class="step-dot">08</span><b>Argmax → Confidence → Temporal Filtering</b></li><li style="--i:8"><span class="step-dot">09</span><b>LCD · LION : 91 %</b></li></ol></figure></div></div><p class="bridge">학습된 INT8 모델 ── Model deployment ──→ STM32 추론</p></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>                           DEVELOPMENT
+════════════════════════════════════════════════════════════
+
+Animal Images
+     │
+     ↓
+Dataset
+     │
+     ↓
+Data Augmentation
+     │
+     ↓
+Preprocessing
+     │
+     ↓
+ImageNet Pretrained MobileNetV2
+     │
+     ↓
+Transfer Learning
+     │
+     ↓
+Fine-tuning
+     │
+     ↓
+FP32 Model
+     │
+     ↓
+Quantization
+     │
+     ↓
+INT8 Model
+     │
+     ↓
+ST Edge AI Core
+     │
+     ↓
+Neural-ART Mapping
+
+
+                            DEPLOYMENT
+════════════════════════════════════════════════════════════
+
+IMX335 Camera
+      │
+      ↓
+MIPI CSI-2
+      │
+      ↓
+DCMIPP
+      │
+      ↓
+Crop / Resize / RGB
+      │
+      ↓
+224 × 224 × 3
+      │
+      ↓
+Input Tensor
+      │
+      ↓
+┌──────────────────────────────┐
+│             DNN              │
+│                              │
+│ Conv                         │
+│   ↓                          │
+│ BN                           │
+│   ↓                          │
+│ ReLU6                        │
+│   ↓                          │
+│ Inverted Residual Blocks     │
+│   ↓                          │
+│ Feature Extraction           │
+│   ↓                          │
+│ Global Average Pooling       │
+│   ↓                          │
+│ Embedding                    │
+│   ↓                          │
+│ Dense                        │
+│   ↓                          │
+│ Logits                       │
+│   ↓                          │
+│ Softmax                      │
+└───────────────┬──────────────┘
+                │
+                ↓
+Dog       0.02
+
+Cat       0.01
+
+Lion      0.91
+
+Tiger     0.03
+
+Elephant  0.01
+
+Other     0.02
+                │
+                ↓
+             Argmax
+                │
+                ↓
+             Lion
+                │
+                ↓
+        Confidence Check
+                │
+                ↓
+        Temporal Filtering
+                │
+                ↓
+              LCD
+
+           LION : 91 %</code></pre></details></section><section class="lesson" id="section-57"><h2><span class="secnum">57</span>이 프로젝트에서 핵심 개념들의 관계</h2><p>마지막으로 지금까지 공부한 용어를 하나로 연결하면 다음과 같다.</p><div class="flow" aria-label="단계별 흐름"><div class="node">Dataset</div><span class="arrow" aria-hidden="true">→</span><div class="node">Training</div><span class="arrow" aria-hidden="true">→</span><div class="node">Weights</div><span class="arrow" aria-hidden="true">→</span><div class="node">Pretrained Model</div><span class="arrow" aria-hidden="true">→</span><div class="node">Transfer Learning</div><span class="arrow" aria-hidden="true">→</span><div class="node">Fine-tuned Model</div><span class="arrow" aria-hidden="true">→</span><div class="node">Quantization</div><span class="arrow" aria-hidden="true">→</span><div class="node">STM32 Deployment</div></div><p>그리고 STM32 내부에서는</p><figure class="visual-flow"><figcaption>STM32 내부 처리 흐름</figcaption><ol class="steps"><li style="--i:0"><span class="step-dot">01</span><b>Sensor</b></li><li style="--i:1"><span class="step-dot">02</span><b>Preprocessing → Input Tensor</b></li><li style="--i:2"><span class="step-dot">03</span><b>DNN · Input Layer</b></li><li style="--i:3"><span class="step-dot">04</span><b>Hidden Layers · Conv / BatchNorm / Activation / Depthwise / Residual</b></li><li style="--i:4"><span class="step-dot">05</span><b>Feature Extraction → Embedding</b></li><li style="--i:5"><span class="step-dot">06</span><b>Dense → Softmax</b></li><li style="--i:6"><span class="step-dot">07</span><b>Postprocessing → Application</b></li></ol></figure><details class="source-diagram"><summary>원문 텍스트 도식 보기</summary><pre tabindex="0"><code>Sensor
+   ↓
+Preprocessing
+   ↓
+Input Tensor
+   ↓
+DNN
+   │
+   ├─ Input Layer
+   │
+   ├─ Hidden Layers
+   │   ├─ Convolution
+   │   ├─ BatchNorm
+   │   ├─ Activation
+   │   ├─ Depthwise Conv
+   │   └─ Residual
+   │
+   ├─ Feature Extraction
+   │
+   ├─ Embedding
+   │
+   ├─ Dense
+   │
+   └─ Softmax
+   ↓
+Postprocessing
+   ↓
+Application</code></pre></details><p>으로 이어진다.</p><p>따라서 Edge AI를 가장 간단하게 정의하면</p><blockquote><strong>Sensor에서 얻은 raw data를 DNN이 이해할 수 있는 형태로 preprocessing하고, 학습된 weight를 가진 DNN으로 inference한 뒤, 그 결과를 postprocessing하여 실제 application에서 사용하는 전체 시스템</strong></blockquote><p>이라고 정리할 수 있다.</p><p>STM32N6570-DK의 Animal Classification 애플리케이션은 이 Edge AI 전체 흐름을 처음부터 끝까지 이해하기에 매우 좋은 예제이다.</p></section><nav class="pager" aria-label="이전 다음 페이지"><a href="runtime.html">← 배포와 실시간 처리</a><a href="index.html">전체 흐름으로 →</a></nav><footer class="foot">STM32N6570-DK 기반 Animal Classification Edge AI 구현 흐름 · 첨부 원문 기반 기술 노트<p><a href="index.html">전체 흐름</a> · <a href="../index.html">기술 노트 목록</a></p></footer></main></div><script src="assets/site.js"></script></body></html>
