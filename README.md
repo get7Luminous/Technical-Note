@@ -9,6 +9,8 @@ HTML로 작성한 기술 노트를 한곳에서 관리하고 GitHub Pages로 공
 - **Face Identification** — STM32N6 기반 얼굴 식별 파이프라인
 - **Animal Classification** — STM32N6570-DK 기반 동물 분류 Edge AI 구현 흐름
 
+- **Edge AI Pipeline** — 데이터·모델·학습·변환·런타임·하드웨어의 7단계 도구 지도
+
 ## 공개 구조
 
 GitHub Pages에는 `docs` 폴더의 내용이 공개됩니다.
@@ -21,6 +23,11 @@ docs/
 │  └─ index.html
 ├─ speaker-identification/
 │  └─ index.html
+├─ edge-ai-pipeline/
+│  ├─ index.html
+│  ├─ datasets.html
+│  ├─ relationships.html
+│  └─ (7개 단계별 상세 페이지와 assets/)
 ├─ animal-classification/
 │  └─ index.html
 └─ id6-face-identification/
